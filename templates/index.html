@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Project AIBO | Director Mode</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/studio.css') }}">
+    <script>
+        window.API_URLS = {
+            update_persona: "{{ url_for('update_persona') }}",
+            dream_cycle: "{{ url_for('dream_cycle') }}",
+            chat: "./api/chat"
+        };
+    </script>
+    <style>
+        /* Mind Palace Styles */
+        .mind-input { width: 100%; background: #111; color: #0f0; border: 1px solid #333; padding: 5px; font-family: monospace; font-size: 11px; }
+        .mind-btn { width: 100%; margin-top: 5px; padding: 8px; cursor: pointer; font-weight: bold; font-size: 10px; border: 1px solid #555; }
+        .btn-save { background: #003300; color: #0f0; border-color: #0f0; }
+        .btn-save:hover { background: #005500; }
+        .btn-sleep { background: #1a1a2e; color: #aao; border-color: #4466aa; }
+        .btn-sleep:hover { background: #2a2a4e; }
+        
+        /* Flash Animation */
+        @keyframes flash {
+            0% { background-color: rgba(255,255,255,0); }
+            10% { background-color: rgba(255,255,255,0.8); }
+            100% { background-color: rgba(255,255,255,0); }
+        }
+        .flash-active { animation: flash 0.5s ease-out; }
+    </style>
+</head>
+<body id="main-body">
+
+    <div id="loader">INITIALIZING SYSTEM...</div>
+    <div id="log"></div>
+
+    <div id="toggle-btn" onclick="togglePanel()">⚙️</div>
+
+    <div id="controls">
+        <div class="panel-header" onclick="toggleSection('voice-controls')">
+            <span class="panel-title">Voice Calibration</span>
+            <span style="color:#555">▼</span>
+        </div>
+        <div id="voice-controls">
+            <div class="control-group">
+                <label>Voice Model</label>
+                <select id="voice-select" data-saved="{{ persona.voice_id }}">
+                    <option value="en-US-AriaNeural">🇺🇸 US Aria (Female)</option>
+                    <option value="en-US-GuyNeural">🇺🇸 US Guy (Male)</option>
+                    <option value="en-US-ChristopherNeural">🇺🇸 US Christopher (Male)</option>
+                    <option value="en-GB-SoniaNeural">🇬🇧 UK Sonia (Female)</option>
+                    <option value="ja-JP-NanamiNeural">🇯🇵 JP Nanami (Female)</option>
+                    <option value="ja-JP-KeitaNeural">🇯🇵 JP Keita (Male)</option>
+                    <option value="ms-MY-YasminNeural">🇲🇾 MY Yasmin (Female)</option>
+                    <option value="ms-MY-OsmanNeural">🇲🇾 MY Osman (Male)</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>Pitch: <span id="pitch-val" class="text-white">{{ persona.voice_pitch }}Hz</span></label>
+                <input type="range" id="pitch" min="-50" max="50" value="{{ persona.voice_pitch }}" oninput="updateLabel('pitch-val', this.value + 'Hz')">
+            </div>
+            <div class="control-group">
+                <label>Speed: <span id="rate-val" class="text-white">{{ persona.voice_rate }}%</span></label>
+                <input type="range" id="rate" min="-50" max="50" value="{{ persona.voice_rate }}" oninput="updateLabel('rate-val', this.value + '%')">
+            </div>
+            <div class="control-group">
+                <label>Volume: <span id="vol-val" class="text-white">{{ persona.voice_volume }}%</span></label>
+                <input type="range" id="volume" min="-50" max="50" value="{{ persona.voice_volume }}" oninput="updateLabel('vol-val', this.value + '%')">
+            </div>
+            <button onclick="testVoice()" style="width:100%; font-size:10px; padding:8px;">TEST SETTINGS</button>
+        </div>
+
+        <div class="panel-header" onclick="toggleSection('mind-controls')" style="margin-top:15px; border-top:1px solid #444; padding-top:10px;">
+            <span class="panel-title">🧠 MIND PALACE</span>
+            <span style="color:#555">▼</span>
+        </div>
+        <div id="mind-controls" style="display:none;">
+            
+            <div class="control-group" style="border-bottom: 1px dashed #333; padding-bottom: 10px; margin-bottom: 10px;">
+                <label style="color: #ffcc00;">🔗 COGNITIVE BRIDGE (NGROK URL)</label>
+                <input type="text" id="api-url" class="mind-input" value="{{ persona.api_endpoint }}" placeholder="https://....ngrok-free.app">
+            </div>
+
+            <div class="control-group">
+                <label>DESIGNATION (BOT NAME)</label>
+                <input type="text" id="bot-name" class="mind-input" value="{{ persona.bot_name }}">
+            </div>
+            
+            <div class="control-group">
+                <label>USER RANK (YOUR NAME)</label>
+                <input type="text" id="user-nick" class="mind-input" value="{{ persona.user_nickname }}">
+            </div>
+            
+            <div class="control-group">
+                <label>CORE PERSONALITY</label>
+                <textarea id="sys-prompt" rows="3" class="mind-input">{{ persona.system_prompt }}</textarea>
+            </div>
+
+            <button id="save-btn" onclick="savePersona()" class="mind-btn btn-save">
+                💾 SAVE CORE IDENTITY
+            </button>
+            
+            <div class="control-group" style="margin-top:15px; border-top:1px dashed #333; padding-top:10px;">
+                <label>CORE MEMORY (EDITABLE)</label>
+                <textarea id="core-bio" rows="4" class="mind-input" style="color:#0f0;">{{ persona.core_biography }}</textarea>
+            </div>
+            
+            <button onclick="triggerDream()" class="mind-btn btn-sleep">
+                💤 SLEEP (CONSOLIDATE MEMORY)
+            </button>
+        </div>
+    </div>
+
+    <div id="vision-ui">
+        <div id="cam-btn" class="vision-btn" onclick="toggleWebcam()" title="Toggle Webcam">📷</div>
+        <div id="screen-btn" class="vision-btn" onclick="toggleScreen()" title="Share Screen">🖥️</div>
+    </div>
+
+    <div id="chat-ui">
+        <button id="mic-btn" onclick="toggleListening()">🎤</button>
+        <input type="text" id="user-input" placeholder="Command..." autocomplete="off">
+        <button onclick="sendMessage()">SEND</button>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.169.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/",
+                "@pixiv/three-vrm": "https://unpkg.com/@pixiv/three-vrm@3.0.0/lib/three-vrm.module.js"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import { initStudio } from "{{ url_for('static', filename='js/studio_main.js') }}";
+        
+        // Start the engine
+        initStudio("{{ url_for('static', filename='avatar.vrm') }}");
+
+        // Bind Enter Key
+        document.getElementById('user-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        // Set Initial Voice Selection
+        const savedVoice = document.getElementById('voice-select').dataset.saved;
+        if(savedVoice) {
+            document.getElementById('voice-select').value = savedVoice;
+        }
+    </script>
+</body>
+</html>
