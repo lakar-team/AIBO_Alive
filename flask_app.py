@@ -4,9 +4,11 @@ import os
 import time
 import sqlite3
 from werkzeug.security import generate_password_hash, check_password_hash
+import edge_tts
+import asyncio
+import hashlib # For Smart Caching
 
-# --- IMPORT MODULES ---
-# Ensure models.py and brain.py are in the same folder!
+# --- MODULES ---
 from models import db, User, Persona
 import brain
 
@@ -21,10 +23,9 @@ if not os.path.exists(os.path.join(BASE_DIR, 'instance')):
     os.makedirs(os.path.join(BASE_DIR, 'instance'))
 
 app = Flask(__name__)
-app.secret_key = "local_super_secret_key" # No mainframe needed here
+app.secret_key = "local_super_secret_key" 
 
 # --- 2. CONFIGURE DATABASE ---
-# We use ONE database for everything on PC (Simpler)
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DB_FILE}'
 app.config['SQLALCHEMY_BINDS'] = { 'aibo': f'sqlite:///{DB_FILE}' }
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -42,9 +43,7 @@ def load_user(user_id):
 
 # --- 4. STARTUP: AUTO-CREATE USER ---
 with app.app_context():
-    db.create_all() # Creates User AND Persona tables
-    
-    # Check if Director exists, if not, create him
+    db.create_all() 
     if not User.query.filter_by(name="Adam").first():
         print("--- SYSTEM: Creating Default User 'Adam' ---")
         admin = User(
@@ -59,7 +58,6 @@ with app.app_context():
 
 @app.route('/login')
 def login():
-    # Auto-login for local use (Convenience!)
     user = User.query.filter_by(name="Adam").first()
     if user:
         login_user(user)
@@ -71,12 +69,10 @@ def login():
 def index():
     persona = Persona.query.filter_by(user_id=current_user.id).first()
     if not persona:
-        # Default Local Persona
         persona = Persona(
             user_id=current_user.id, 
             user_nickname="Director",
             bot_name="AIBO",
-            # Point directly to Localhost Ollama!
             api_endpoint="http://localhost:11434" 
         )
         db.session.add(persona)
@@ -96,7 +92,7 @@ def chat():
     try:
         persona = Persona.query.filter_by(user_id=current_user.id).first()
         
-        # A. Auto-Consolidate Memory
+        # Memory Management
         if persona.short_term_buffer and len(persona.short_term_buffer) > 2000:
             success, new_mem = brain.consolidate_memory(persona)
             if success:
@@ -104,10 +100,8 @@ def chat():
                 persona.short_term_buffer = ""
                 db.session.commit()
 
-        # B. Get Response
         reply_text, status = brain.get_chat_response(persona, user_text, image_data)
         
-        # C. Update Memory
         if status == "success":
             entry = f"User: {user_text}\n{persona.bot_name}: {reply_text}\n---\n"
             if not persona.short_term_buffer: persona.short_term_buffer = ""
@@ -127,13 +121,13 @@ def pulse():
     now = time.time()
     last_active = session.get('last_active', now)
     
-    if now - last_active > 15.0: # 15 seconds of silence triggers thought
+    if now - last_active > 30.0: 
         if not session.get('thinking_spontaneously'):
             session['thinking_spontaneously'] = True
             try:
                 persona = Persona.query.filter_by(user_id=current_user.id).first()
                 spontaneous_thought = brain.free_will(persona)
-                session['last_active'] = time.time()
+                session['last_active'] = time.time() 
                 session['thinking_spontaneously'] = False
                 if spontaneous_thought:
                     return jsonify({"pulse": spontaneous_thought})
@@ -175,6 +169,53 @@ def update_persona():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# --- SMART CACHING VOICE GENERATOR ---
+@app.route('/api/speak', methods=['POST'])
+@login_required
+def speak():
+    data = request.json
+    text = data.get('text', '')
+    voice = data.get('voice', 'en-US-AriaNeural')
+    
+    # Sanitize Inputs for Edge-TTS
+    raw_pitch = data.get('pitch', '0Hz').replace('+', '')
+    raw_rate = data.get('rate', '0%').replace('+', '')
+    pitch = raw_pitch if raw_pitch.startswith('-') else f"+{raw_pitch}"
+    rate = raw_rate if raw_rate.startswith('-') else f"+{raw_rate}"
+
+    if not text:
+        return jsonify({"error": "No text"}), 400
+
+    # 1. CREATE UNIQUE ID (HASH)
+    # This creates a unique filename for this exact phrase+voice combination
+    combo_string = f"{text}_{voice}_{pitch}_{rate}"
+    file_hash = hashlib.md5(combo_string.encode('utf-8')).hexdigest()
+    
+    filename = f"{file_hash}.mp3"
+    cache_dir = os.path.join(BASE_DIR, 'static', 'audio_cache')
+    filepath = os.path.join(cache_dir, filename)
+    
+    if not os.path.exists(cache_dir):
+        os.makedirs(cache_dir)
+
+    # 2. CHECK CACHE (INSTANT PLAYBACK)
+    if os.path.exists(filepath):
+        print(f"--- CACHE HIT: '{text[:15]}...' (Instant) ---")
+        return jsonify({"url": url_for('static', filename=f'audio_cache/{filename}')})
+
+    # 3. DOWNLOAD NEW (If not in cache)
+    print(f"--- CACHE MISS: Downloading '{text[:15]}...' ---")
+    
+    async def generate_audio():
+        communicate = edge_tts.Communicate(text, voice, pitch=pitch, rate=rate)
+        await communicate.save(filepath)
+
+    try:
+        asyncio.run(generate_audio())
+        return jsonify({"url": url_for('static', filename=f'audio_cache/{filename}')})
+    except Exception as e:
+        print(f"TTS Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
-    # Runs on localhost:5000
     app.run(debug=True, port=5000)
