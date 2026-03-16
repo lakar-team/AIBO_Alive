@@ -9,7 +9,7 @@ export class MotionEngine {
         
         this.activeAnimations = []; 
 
-        // --- POSE LIBRARY ---
+        // --- HARDCODED BASE LIBRARY ---
         this.poses = {
             HEAD: {
                 NEUTRAL: { x: 0, y: 0, z: 0 },
@@ -21,48 +21,13 @@ export class MotionEngine {
                 TILT_R:  { x: 0, y: 0, z: -0.2 }
             },
             ARMS: {
-                // NEUTRAL: Arms Down (Z positive approx 1.3)
-                NEUTRAL: { 
-                    lx: 0, ly: 0, lz: 1.3, lex: 0, ley: 0.1, lez: 0, hx: 0, hy: 0, hz: 0,
-                    rx: 0, ry: 0, rz: 1.3, rex: 0, rey: 0.1, rez: 0, rhx: 0, rhy: 0, rhz: 0
-                },
-                // OPEN: Arms slightly back (X neg)
-                OPEN: { 
-                    lx: 0.2, ly: 0, lz: 0.3, lex: 0, ley: 0.5, lez: 0, hx: 0, hy: 0, hz: 0,
-                    rx: 0.2, ry: 0, rz: 0.3, rex: 0, rey: 0.5, rez: 0, rhx: 0, rhy: 0, rhz: 0
-                },
-                // UP: Arms Up (Z Negative)
-                UP: { 
-                    lx: 0, ly: 0, lz: -2.5, lex: 0, ley: 0, lez: 0, hx: 0, hy: 0, hz: 0,
-                    rx: 0, ry: 0, rz: -2.5, rex: 0, rey: 0, rez: 0, rhx: 0, rhy: 0, rhz: 0
-                },
-                // CROSS: Arms Forward (X Pos), Elbows Bent (Y Pos)
-                CROSS: { 
-                    // Left (Mirrored logic handled in update, but we define intended targets)
-                    // If Right X=0.6 is forward, Left X should be mirrored.
-                    // We set generic targets here and handle symmetry in update()
-                    lx: 0.6, ly: 0.5, lz: 1.2, lex: 0, ley: 2.0, lez: 0, hx: 0, hy: 0, hz: 0,
-                    rx: 0.6, ry: -0.5, rz: 1.2, rex: 0, rey: 2.0, rez: 0, rhx: 0, rhy: 0, rhz: 0
-                },
-                // SALUTE: EXACT DATA FROM RIGGING LAB
-                SALUTE: {
-                    lx: 0, ly: 0, lz: 1.3, lex: 0, ley: 0.1, lez: 0, hx: 0, hy: 0, hz: 0,
-                    
-                    // Right Arm (Copied from Image 1d6fb2)
-                    rx: 0.60,   // Shoulder X
-                    ry: 0.50,   // Shoulder Y
-                    rz: -0.20,  // Shoulder Z
-                    rex: -0.20, // Elbow X
-                    rey: 2.00,  // Elbow Y
-                    rez: 0.50,  // Elbow Z
-                    rhx: 0.30,  // Wrist X
-                    rhy: 0.50,  // Wrist Y
-                    rhz: 0.00   // Wrist Z
-                },
+                NEUTRAL: { lx: 0, ly: 0, lz: 1.3, lex: 0, ley: 0.1, lez: 0, rx: 0, ry: 0, rz: 1.3, rex: 0, rey: 0.1, rez: 0 },
+                OPEN: { lx: 0.2, ly: 0, lz: 0.3, lex: 0, ley: 0.5, lez: 0, rx: 0.2, ry: 0, rz: 0.3, rex: 0, rey: 0.5, rez: 0 },
+                UP: { lx: 0, ly: 0, lz: -2.5, lex: 0, ley: 0, lez: 0, rx: 0, ry: 0, rz: -2.5, rex: 0, rey: 0, rez: 0 },
+                CROSS: { lx: 0.6, ly: 0.5, lz: 1.2, lex: 0, ley: 2.0, lez: 0, rx: 0.6, ry: -0.5, rz: 1.2, rex: 0, rey: 2.0, rez: 0 },
                 WAVE: { anim: 'WAVE' },
                 CLAP: { anim: 'CLAP' }
             },
-            // ... (Legs and Body kept same) ...
             LEGS: {
                 NEUTRAL: { lx: 0, ly: 0, lz: 0, lex: 0, rx: 0, ry: 0, rz: 0, rex: 0 },
                 CUTE:    { lx: -0.1, ly: 0, lz: 0, lex: 0.2, rx: -0.1, ry: 0, rz: 0, rex: 0.2 },
@@ -76,10 +41,7 @@ export class MotionEngine {
                 LEAN_B:  { x: -0.2, y: 0, z: 0 },
                 TWIST:   { anim: 'TWIST' },
                 JUMP:    { anim: 'JUMP' },
-                DANCE:   { anim: 'DANCE' },
-                SLOW_DANCE: { anim: 'SLOW_DANCE' },
-                IDOL:    { anim: 'IDOL_POSE' },
-                SLUMP:   { x: 0.5, y: 0, z: 0 }
+                DANCE:   { anim: 'DANCE' }
             }
         };
 
@@ -93,6 +55,31 @@ export class MotionEngine {
             legL: { x: 0, y: 0, z: 0 }, kneeL: { x: 0 },
             legR: { x: 0, y: 0, z: 0 }, kneeR: { x: 0 }
         };
+
+        // LOAD LEARNED BEHAVIORS
+        this.loadCustomPoses();
+    }
+
+    async loadCustomPoses() {
+        try {
+            const res = await fetch('./api/poses');
+            const data = await res.json();
+            
+            // Format of Key: "ARMS_HERO_POSE" or "LEGS_SIT"
+            Object.keys(data).forEach(key => {
+                const val = data[key];
+                const parts = key.split('_');
+                const category = parts[0]; // ARMS, LEGS, etc.
+                const name = parts.slice(1).join('_'); // HERO_POSE
+
+                if (this.poses[category]) {
+                    this.poses[category][name] = val;
+                }
+            });
+            console.log("AIBO Motion: Knowledge Updated.");
+        } catch (e) {
+            console.error("Could not load custom poses:", e);
+        }
     }
 
     setVRM(vrm) { this.vrm = vrm; }
@@ -105,8 +92,15 @@ export class MotionEngine {
 
     triggerSpecific(part, action) {
         if (!this.poses[part]) return;
-        const data = this.poses[part][action];
-        if (!data) return;
+        
+        let data = this.poses[part][action];
+        
+        // HALLUCINATION HANDLING:
+        // If AI asks for [ARMS: SUPERMAN] but we don't have it, log it and ignore.
+        if (!data) {
+            console.warn(`AIBO attempted unknown move: ${part} -> ${action}. Use Rigging Lab to teach this!`);
+            return;
+        }
 
         if (data.anim) {
             this.activeAnimations = this.activeAnimations.filter(a => a.limb !== part);
@@ -115,12 +109,10 @@ export class MotionEngine {
             if (part === 'HEAD') this.targets.head = { ...data };
             if (part === 'BODY') this.targets.spine = { ...data };
             if (part === 'ARMS') {
-                // Apply Left
                 this.targets.armL.x = data.lx; this.targets.armL.y = data.ly; this.targets.armL.z = data.lz;
                 this.targets.elbowL.x = data.lex; this.targets.elbowL.y = data.ley; this.targets.elbowL.z = data.lez;
-                this.targets.wristL.x = data.hx || 0; this.targets.wristL.y = data.hy || 0; this.targets.wristL.z = data.hz || 0;
+                this.targets.wristL.x = data.lhx || 0; this.targets.wristL.y = data.lhy || 0; this.targets.wristL.z = data.lhz || 0;
 
-                // Apply Right
                 this.targets.armR.x = data.rx; this.targets.armR.y = data.ry; this.targets.armR.z = data.rz;
                 this.targets.elbowR.x = data.rex; this.targets.elbowR.y = data.rey; this.targets.elbowR.z = data.rez;
                 this.targets.wristR.x = data.rhx || 0; this.targets.wristR.y = data.rhy || 0; this.targets.wristR.z = data.rhz || 0;
@@ -154,14 +146,12 @@ export class MotionEngine {
             const t = anim.timer;
 
             if (anim.type === 'WAVE') {
-                // FIXED WAVE: High Negative Z = Up
                 this.targets.armR.z = -2.5; 
                 this.targets.armR.x = 0; 
-                this.targets.elbowR.y = 2.0; // Positive Y = Bend
+                this.targets.elbowR.y = 2.0;
                 this.targets.elbowR.z = Math.sin(this.time * 8) * 0.5; 
             }
             if (anim.type === 'CLAP') {
-                // FIXED CLAP: Positive X = Forward/Across
                 this.targets.armL.x = 0.6; this.targets.armL.z = 0.5;
                 this.targets.armR.x = 0.6; this.targets.armR.z = 0.5;
                 const clap = Math.abs(Math.sin(this.time * 10)) * 0.2;
@@ -185,14 +175,6 @@ export class MotionEngine {
                 if (t < 0.2) hipsY = -0.2; else if (t < 0.6) hipsY = 0.5; 
                 else if (t < 0.9) hipsY = -0.1; else anim.finished = true;
             }
-            if (anim.type === 'IDOL_POSE') {
-                hipsX = Math.sin(t * 2) * 0.1; spineY = -0.3; 
-                if (t > 4.0) anim.finished = true;
-            }
-            if (anim.type === 'SLOW_DANCE') {
-                 hipsX = Math.sin(this.time * 1.5) * 0.15; spineY = Math.cos(this.time * 1.5) * 0.1; 
-                 spineX += Math.sin(this.time) * 0.05;
-            }
             if (anim.type === 'DANCE') {
                 hipsY = Math.abs(Math.sin(this.time * 8)) * 0.1; spineY = Math.sin(this.time * 4) * 0.2;
                 this.targets.legL.z = 0.1; this.targets.legR.z = -0.1;
@@ -201,7 +183,7 @@ export class MotionEngine {
 
         this.activeAnimations = this.activeAnimations.filter(a => !a.finished);
 
-        // APPLY LOGIC (No complex mirroring needed if we set targets correctly in poses)
+        // APPLY LOGIC
         const s = this.baseSpeed * deltaTime * this.energy;
         const apply = (b, t) => {
             const bone = humanoid.getNormalizedBoneNode(b);

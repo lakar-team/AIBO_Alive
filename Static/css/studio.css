@@ -1,7 +1,7 @@
 /* --- BASE STYLES --- */
 body { margin: 0; overflow: hidden; background-color: #202020; font-family: 'Courier New', monospace; color: white; }
 
-/* --- VISION CONTROLS (NEW) --- */
+/* --- VISION CONTROLS --- */
 #vision-ui {
     position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%);
     display: flex; gap: 15px; z-index: 15;
@@ -15,7 +15,6 @@ body { margin: 0; overflow: hidden; background-color: #202020; font-family: 'Cou
 
 .vision-btn:hover { border-color: #00aaaa; color: #fff; }
 
-/* Active State (Glowing Eye) */
 .vision-btn.active {
     background: #00aaaa; color: #000; border-color: #fff;
     box-shadow: 0 0 15px #00aaaa;
@@ -79,6 +78,21 @@ select { width: 100%; background: #000; color: #fff; border: 1px solid #333; pad
 }
 
 /* --- UTILITIES --- */
-#log { position: absolute; top: 20px; left: 20px; width: 300px; height: 400px; overflow-y: auto; pointer-events: none; opacity: 0.7; font-size: 12px; }
-.msg { margin-bottom: 4px; padding: 4px 8px; background: rgba(0,0,0,0.5); border-left: 2px solid #555; }
+/* FIXED: Log itself is ghost, but .msg is interactive so you can select text! */
+#log { 
+    position: absolute; top: 20px; left: 20px; width: 350px; height: 500px; 
+    overflow-y: auto; pointer-events: none; opacity: 0.8; font-size: 12px; z-index: 5;
+}
+.msg { 
+    pointer-events: auto; /* ALLOWS SELECTION */
+    user-select: text;    /* ALLOWS COPYING */
+    cursor: text;
+    margin-bottom: 4px; padding: 6px 10px; 
+    background: rgba(0,0,0,0.6); border-left: 3px solid #555; 
+    word-wrap: break-word;
+}
+
+/* Highlight AI Tags differently */
+.tag-text { color: #ff00ff; font-weight: bold; }
+
 #loader { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #0f0; font-size: 20px; pointer-events: none; }

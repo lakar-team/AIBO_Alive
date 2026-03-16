@@ -49,19 +49,27 @@ export class AiboVision {
         this.mode = 'none';
     }
 
-    // Snaps a picture of what the eye sees right now
+    // Snaps a compressed picture for the AI
     captureFrame() {
         if (this.mode === 'none' || !this.activeStream) return null;
 
         const canvas = document.createElement('canvas');
-        canvas.width = this.videoElement.videoWidth;
-        canvas.height = this.videoElement.videoHeight;
+        
+        // --- OPTIMIZATION: Resize to 320px width ---
+        const targetWidth = 320; 
+        const aspectRatio = this.videoElement.videoWidth / this.videoElement.videoHeight;
+        
+        // Calculate proportional height
+        canvas.width = targetWidth;
+        canvas.height = targetWidth / aspectRatio;
         
         const ctx = canvas.getContext('2d');
+        // Draw the video frame into the tiny canvas
         ctx.drawImage(this.videoElement, 0, 0, canvas.width, canvas.height);
         
-        // Return Base64 JPEG string
-        return canvas.toDataURL('image/jpeg', 0.8);
+        // Return Base64 JPEG string with 50% quality (0.5)
+        // This reduces payload from ~2MB to ~15KB
+        return canvas.toDataURL('image/jpeg', 0.5);
     }
 
     isActive() {

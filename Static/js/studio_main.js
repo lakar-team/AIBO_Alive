@@ -4,7 +4,7 @@ import { AiboAvatar } from "./avatar_core.js";
 import { AiboVoice } from "./speech_core.js";
 import { AiboVision } from "./vision_core.js"; 
 
-// --- FULL BODY RIGGING LAB ---
+// --- TEACHER INTERFACE (RIGGING LAB) ---
 function createDebugUI(avatar) {
     const container = document.createElement('div');
     Object.assign(container.style, {
@@ -16,50 +16,104 @@ function createDebugUI(avatar) {
     });
     container.id = 'debug-panel';
 
-    // --- HEADER & EXPORT ---
     const header = document.createElement('div');
-    header.innerHTML = "<h3 style='margin:0; text-align:center'>🎛️ POSE STUDIO</h3>";
+    header.innerHTML = "<h3 style='margin:0; text-align:center'>🎛️ RIGGING LAB</h3>";
     container.appendChild(header);
 
-    const exportBtn = document.createElement('button');
-    exportBtn.innerText = "💾 PRINT POSE TO CONSOLE";
-    Object.assign(exportBtn.style, {
+    // --- TOGGLE FREEZE / RESUME ---
+    const freezeBtn = document.createElement('button');
+    let isFrozen = false; 
+
+    freezeBtn.innerText = "⏹️ FREEZE MOTOR FUNCTIONS";
+    Object.assign(freezeBtn.style, {
         width: '100%', marginTop: '10px', padding: '8px', 
-        background: '#004433', color: '#fff', border: '1px solid #00ffcc', cursor: 'pointer'
+        background: '#550000', color: '#ffaaaa', border: '1px solid #ff0000', cursor: 'pointer',
+        fontWeight: 'bold', fontSize: '11px'
     });
-    exportBtn.onclick = () => {
+
+    freezeBtn.onclick = () => {
+        if (!isFrozen) {
+            isFrozen = true;
+            avatar.motion.activeAnimations = []; 
+            avatar.motion.energy = 1.0;          
+            freezeBtn.innerText = "▶️ RESUME MOTOR FUNCTIONS";
+            freezeBtn.style.background = "#005500";
+            freezeBtn.style.color = "#aaffaa";
+            freezeBtn.style.borderColor = "#00ff00";
+            alert("❄️ AI FROZEN. You can now use the sliders to pose Arms & Legs.");
+        } else {
+            isFrozen = false;
+            avatar.motion.energy = 1.0;
+            freezeBtn.innerText = "⏹️ FREEZE MOTOR FUNCTIONS";
+            freezeBtn.style.background = "#550000";
+            freezeBtn.style.color = "#ffaaaa";
+            freezeBtn.style.borderColor = "#ff0000";
+        }
+    };
+    container.appendChild(freezeBtn);
+
+    // --- SAVE / LEARN UI ---
+    const saveGroup = document.createElement('div');
+    saveGroup.style.marginTop = "10px";
+    saveGroup.style.padding = "10px";
+    saveGroup.style.background = "#220022";
+    saveGroup.style.border = "1px solid #ff00ff";
+
+    const nameInput = document.createElement('input');
+    nameInput.placeholder = "POSE NAME (e.g. ARMS_HERO)";
+    nameInput.style.width = "95%";
+    nameInput.style.marginBottom = "5px";
+    nameInput.style.background = "#000";
+    nameInput.style.color = "#fff";
+    nameInput.style.border = "1px solid #555";
+    nameInput.style.padding = "5px";
+
+    const saveBtn = document.createElement('button');
+    saveBtn.innerText = "💾 TEACH AIBO THIS POSE";
+    Object.assign(saveBtn.style, {
+        width: '100%', padding: '8px', 
+        background: '#550055', color: '#fff', border: '1px solid #ff00ff', cursor: 'pointer'
+    });
+
+    saveBtn.onclick = async () => {
+        const rawName = nameInput.value;
+        if (!rawName) { alert("Please name the pose (e.g. ARMS_BOW)"); return; }
+
         const t = avatar.motion.targets;
-        // FORMATTER: Converts current slider values into the exact JS object for motion_core.js
         const poseData = {
-            // HEAD & BODY
-            head: { ...t.head },
-            spine: { ...t.spine },
-            hips: { ...t.hips },
-            // LEFT ARM
             lx: t.armL.x, ly: t.armL.y, lz: t.armL.z,
             lex: t.elbowL.x, ley: t.elbowL.y, lez: t.elbowL.z,
             lhx: t.wristL.x, lhy: t.wristL.y, lhz: t.wristL.z,
-            // RIGHT ARM
             rx: t.armR.x, ry: t.armR.y, rz: t.armR.z,
             rex: t.elbowR.x, rey: t.elbowR.y, rez: t.elbowR.z,
             rhx: t.wristR.x, rhy: t.wristR.y, rhz: t.wristR.z,
-            // LEGS
             legL: { ...t.legL }, kneeL: { ...t.kneeL },
-            legR: { ...t.legR }, kneeR: { ...t.kneeR }
+            legR: { ...t.legR }, kneeR: { ...t.kneeR },
+            head: { ...t.head }, spine: { ...t.spine }
         };
-        console.log("--- COPY THIS BLOCK ---");
-        console.log(JSON.stringify(poseData, (key, val) => {
-            return (typeof val === 'number') ? Number(val.toFixed(2)) : val;
-        }, 2));
-        console.log("-----------------------");
-        alert("Pose Data printed to Console (F12)!");
-    };
-    container.appendChild(exportBtn);
 
-    // --- HELPER: CREATE SLIDER GROUP ---
+        try {
+            const res = await fetch('./api/poses', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ name: rawName, pose: poseData })
+            });
+            const d = await res.json();
+            alert(`✅ AIBO LEARNED: ${d.name}`);
+            avatar.motion.loadCustomPoses(); 
+        } catch (e) {
+            alert("Save Failed: " + e);
+        }
+    };
+
+    saveGroup.appendChild(nameInput);
+    saveGroup.appendChild(saveBtn);
+    container.appendChild(saveGroup);
+
+    // --- SLIDERS ---
     const createSection = (title) => {
         const details = document.createElement('details');
-        details.open = false; // Collapsed by default to save space
+        details.open = false; 
         details.style.marginTop = '5px';
         details.style.borderBottom = '1px solid #333';
         const summary = document.createElement('summary');
@@ -102,53 +156,43 @@ function createDebugUI(avatar) {
         parent.appendChild(row);
     };
 
-    // --- 1. HEAD & BODY ---
+    // 1. HEAD & BODY
     const secBody = createSection("👤 HEAD & SPINE");
     addSlider(secBody, 'Head', avatar.motion.targets.head, 'x', -1, 1);
     addSlider(secBody, 'Head', avatar.motion.targets.head, 'y', -1, 1);
     addSlider(secBody, 'Spine', avatar.motion.targets.spine, 'x', -1, 1);
     addSlider(secBody, 'Spine', avatar.motion.targets.spine, 'y', -1, 1);
-    addSlider(secBody, 'Hips', avatar.motion.targets.hips, 'y', -1, 1);
 
-    // --- 2. RIGHT ARM (Focus) ---
+    // 2. ARMS
     const secRArm = createSection("💪 RIGHT ARM");
-    secRArm.open = true; // Open by default
+    secRArm.open = true; 
     addSlider(secRArm, 'Shoulder', avatar.motion.targets.armR, 'x', -3.1, 3.1);
     addSlider(secRArm, 'Shoulder', avatar.motion.targets.armR, 'y', -3.1, 3.1);
     addSlider(secRArm, 'Shoulder', avatar.motion.targets.armR, 'z', -3.1, 3.1);
-    secRArm.appendChild(document.createElement('hr'));
     addSlider(secRArm, 'Elbow', avatar.motion.targets.elbowR, 'x', -3.1, 3.1);
     addSlider(secRArm, 'Elbow', avatar.motion.targets.elbowR, 'y', -3.1, 3.1);
     addSlider(secRArm, 'Elbow', avatar.motion.targets.elbowR, 'z', -3.1, 3.1);
-    secRArm.appendChild(document.createElement('hr'));
     addSlider(secRArm, 'Wrist', avatar.motion.targets.wristR, 'x', -3.1, 3.1);
-    addSlider(secRArm, 'Wrist', avatar.motion.targets.wristR, 'y', -3.1, 3.1);
-    addSlider(secRArm, 'Wrist', avatar.motion.targets.wristR, 'z', -3.1, 3.1);
 
-    // --- 3. LEFT ARM ---
     const secLArm = createSection("💪 LEFT ARM");
     addSlider(secLArm, 'Shoulder', avatar.motion.targets.armL, 'x', -3.1, 3.1);
     addSlider(secLArm, 'Shoulder', avatar.motion.targets.armL, 'y', -3.1, 3.1);
     addSlider(secLArm, 'Shoulder', avatar.motion.targets.armL, 'z', -3.1, 3.1);
-    secLArm.appendChild(document.createElement('hr'));
     addSlider(secLArm, 'Elbow', avatar.motion.targets.elbowL, 'x', -3.1, 3.1);
     addSlider(secLArm, 'Elbow', avatar.motion.targets.elbowL, 'y', -3.1, 3.1);
     addSlider(secLArm, 'Elbow', avatar.motion.targets.elbowL, 'z', -3.1, 3.1);
-    secLArm.appendChild(document.createElement('hr'));
     addSlider(secLArm, 'Wrist', avatar.motion.targets.wristL, 'x', -3.1, 3.1);
-    addSlider(secLArm, 'Wrist', avatar.motion.targets.wristL, 'y', -3.1, 3.1);
-    addSlider(secLArm, 'Wrist', avatar.motion.targets.wristL, 'z', -3.1, 3.1);
 
-    // --- 4. LEGS ---
+    // 3. LEGS (UPDATED)
     const secLegs = createSection("🦵 LEGS");
-    addSlider(secLegs, 'L Thigh', avatar.motion.targets.legL, 'x', -1.5, 1.5);
-    addSlider(secLegs, 'L Thigh', avatar.motion.targets.legL, 'y', -1.5, 1.5);
-    addSlider(secLegs, 'L Thigh', avatar.motion.targets.legL, 'z', -1.5, 1.5);
+    addSlider(secLegs, 'L Thigh Bend', avatar.motion.targets.legL, 'x', -1.5, 1.5);
+    addSlider(secLegs, 'L Thigh Turn', avatar.motion.targets.legL, 'y', -1.5, 1.5);
+    addSlider(secLegs, 'L Thigh Side', avatar.motion.targets.legL, 'z', -1.5, 1.5);
     addSlider(secLegs, 'L Knee', avatar.motion.targets.kneeL, 'x', -2.5, 0);
-    secLegs.appendChild(document.createElement('hr'));
-    addSlider(secLegs, 'R Thigh', avatar.motion.targets.legR, 'x', -1.5, 1.5);
-    addSlider(secLegs, 'R Thigh', avatar.motion.targets.legR, 'y', -1.5, 1.5);
-    addSlider(secLegs, 'R Thigh', avatar.motion.targets.legR, 'z', -1.5, 1.5);
+
+    addSlider(secLegs, 'R Thigh Bend', avatar.motion.targets.legR, 'x', -1.5, 1.5);
+    addSlider(secLegs, 'R Thigh Turn', avatar.motion.targets.legR, 'y', -1.5, 1.5);
+    addSlider(secLegs, 'R Thigh Side', avatar.motion.targets.legR, 'z', -1.5, 1.5);
     addSlider(secLegs, 'R Knee', avatar.motion.targets.kneeR, 'x', -2.5, 0);
 
     document.body.appendChild(container);
@@ -185,7 +229,7 @@ export function initStudio(avatarUrl) {
 
     // --- CREATE THE DEBUG BUTTON ---
     const debugBtn = document.createElement('button');
-    debugBtn.innerText = "🛠️ RIGGING LAB";
+    debugBtn.innerText = "🛠️ TEACHER MODE";
     Object.assign(debugBtn.style, {
         position: 'absolute', bottom: '20px', right: '20px',
         padding: '10px 20px', backgroundColor: '#333', color: '#fff',
@@ -197,6 +241,18 @@ export function initStudio(avatarUrl) {
         else p.style.display = p.style.display === 'none' ? 'block' : 'none';
     };
     document.body.appendChild(debugBtn);
+
+    // --- AUTOMATICALLY INJECT SIGHT BUTTON ---
+    const visionUI = document.getElementById('vision-ui');
+    if (visionUI) {
+        const sightBtn = document.createElement('div');
+        sightBtn.id = 'sight-btn';
+        sightBtn.className = 'vision-btn';
+        sightBtn.innerText = '👁️';
+        sightBtn.title = "Toggle Continuous Sight";
+        sightBtn.onclick = () => window.toggleSight();
+        visionUI.appendChild(sightBtn);
+    }
 
     function executeAIResponse(rawText) {
         if (!rawText) return;
@@ -218,14 +274,13 @@ export function initStudio(avatarUrl) {
 
         const runPhysicalActions = () => {
             const debugPanel = document.getElementById('debug-panel');
-            // IMPORTANT: If Debug Panel is open, IGNORE AI movements so you can adjust sliders!
             const isDebugging = debugPanel && debugPanel.style.display !== 'none';
 
             actionQueue.forEach(act => {
                 if (act.type === 'EMOTION') avatar.setEmotion(act.value);
                 else {
                     if (isDebugging) {
-                        console.log("⚠️ Rigging Lab Open - Ignoring AI Move:", act.value);
+                        console.log("⚠️ Teacher Mode Open - Ignoring AI Move:", act.value);
                         return; 
                     }
                     avatar.setBodyPart(act.type, act.value);
@@ -234,12 +289,60 @@ export function initStudio(avatarUrl) {
         };
 
         if (cleanSpeech.length > 1) {
-            logMessage("AIBO: " + cleanSpeech);
+            const displayMsg = rawText.replace(tagRegex, '<span class="tag-text">[$1: $2]</span>');
+            logMessage("AIBO: " + displayMsg, true);
             voice.speak(cleanSpeech, runPhysicalActions);
         } else {
-            logMessage("AIBO: [Gesture]");
+            // For passive system checks (sight), we might not want to log everything if it's just [HEAD: NOD]
+            // But for now we log it so you know it's working
+            logMessage("AIBO: " + rawText, true);
             runPhysicalActions();
         }
+    }
+
+    // --- CONTINUOUS SIGHT LOGIC ---
+    let sightLoopActive = false;
+    window.toggleSight = function() {
+        sightLoopActive = !sightLoopActive;
+        const btn = document.getElementById('sight-btn');
+        if (sightLoopActive) {
+            if(btn) btn.classList.add('active');
+            logMessage("SYSTEM: Visual Cortex Online. Watching...", false);
+            runSightLoop();
+        } else {
+            if(btn) btn.classList.remove('active');
+            logMessage("SYSTEM: Visual Cortex Offline.", false);
+        }
+    };
+
+    async function runSightLoop() {
+        if (!sightLoopActive || !vision.isActive()) {
+            sightLoopActive = false;
+            const btn = document.getElementById('sight-btn');
+            if(btn) btn.classList.remove('active');
+            return;
+        }
+
+        const imageFrame = vision.captureFrame();
+
+        try {
+            // Send passive check to brain
+            const res = await fetch(window.API_URLS.chat, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    text: "[SYSTEM: PASSIVE_VISION_CHECK]", 
+                    image: imageFrame 
+                })
+            });
+            const data = await res.json();
+            if (data.reply) executeAIResponse(data.reply);
+        } catch (e) {
+            console.log("Sight Error:", e);
+        }
+
+        // Recursive loop: Wait 1s after finishing before starting next
+        if (sightLoopActive) setTimeout(runSightLoop, 1000);
     }
 
     setInterval(async () => {
@@ -269,7 +372,7 @@ export function initStudio(avatarUrl) {
         const text = input.value;
         if (!text && !vision.isActive()) return;
 
-        logMessage("You: " + (text || "[Sending Image...]"));
+        logMessage("You: " + (text || "[Sending Image...]"), false);
         input.value = "";
         voice.stop();
         const imageFrame = vision.captureFrame();
@@ -283,7 +386,7 @@ export function initStudio(avatarUrl) {
             const data = await res.json();
 
             if (!res.ok || data.error) {
-                logMessage("SYSTEM: " + (data.error || "Error"));
+                logMessage("SYSTEM: " + (data.error || "Error"), false);
                 avatar.setEmotion("SAD");
                 return;
             }
@@ -295,28 +398,28 @@ export function initStudio(avatarUrl) {
     }
 
     window.savePersona = async function() {
-        const btn = document.getElementById('save-btn');
-        btn.innerText = "UPLOADING...";
-        try {
-            const payload = {
-                bot_name: document.getElementById('bot-name').value,
-                user_nickname: document.getElementById('user-nick').value,
-                system_prompt: document.getElementById('sys-prompt').value,
-                core_biography: document.getElementById('core-bio').value,
-                api_endpoint: document.getElementById('api-url').value,
-                voice_id: document.getElementById('voice-select').value,
-                voice_pitch: document.getElementById('pitch').value,
-                voice_rate: document.getElementById('rate').value,
-                voice_volume: document.getElementById('volume').value
-            };
-            await fetch(window.API_URLS.update_persona, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(payload)
-            });
-            btn.innerText = "✅ SAVED";
-        } catch (e) { btn.innerText = "⚠️ FAIL"; }
-        setTimeout(() => { btn.innerText = "💾 SAVE CORE IDENTITY"; }, 2000);
+       const btn = document.getElementById('save-btn');
+       btn.innerText = "UPLOADING...";
+       try {
+           const payload = {
+               bot_name: document.getElementById('bot-name').value,
+               user_nickname: document.getElementById('user-nick').value,
+               system_prompt: document.getElementById('sys-prompt').value,
+               core_biography: document.getElementById('core-bio').value,
+               api_endpoint: document.getElementById('api-url').value,
+               voice_id: document.getElementById('voice-select').value,
+               voice_pitch: document.getElementById('pitch').value,
+               voice_rate: document.getElementById('rate').value,
+               voice_volume: document.getElementById('volume').value
+           };
+           await fetch(window.API_URLS.update_persona, {
+               method: 'POST',
+               headers: {'Content-Type': 'application/json'},
+               body: JSON.stringify(payload)
+           });
+           btn.innerText = "✅ SAVED";
+       } catch (e) { btn.innerText = "⚠️ FAIL"; }
+       setTimeout(() => { btn.innerText = "💾 SAVE CORE IDENTITY"; }, 2000);
     }
     
     window.toggleWebcam = async function() {
@@ -329,7 +432,7 @@ export function initStudio(avatarUrl) {
     }
     window.triggerDream = async function() { 
         await fetch(window.API_URLS.dream_cycle, {method: 'POST'}); 
-        logMessage("AIBO: Dream Cycle Complete."); 
+        logMessage("AIBO: Dream Cycle Complete.", false); 
     }
     window.toggleListening = function() {
         const btn = document.getElementById('mic-btn');
@@ -346,11 +449,14 @@ export function initStudio(avatarUrl) {
         const el = document.getElementById(id);
         el.style.display = el.style.display === 'none' ? 'block' : 'none';
     }
-    window.logMessage = function(msg) { 
+    
+    window.logMessage = function(msg, isHtml=false) { 
         const d = document.createElement('div');
-        d.className = 'msg'; d.innerText = msg;
+        d.className = 'msg'; 
+        if(isHtml) d.innerHTML = msg; else d.innerText = msg;
         document.getElementById('log').prepend(d);
     }
+
     window.addEventListener('resize', () => {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();

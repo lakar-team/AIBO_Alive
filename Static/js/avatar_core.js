@@ -18,25 +18,38 @@ export class AiboAvatar {
         this.isBlinking = false;
     }
 
+    // --- UPDATED LOADER WITH ERROR LOGGING ---
     load(url, onLoaded) {
         const loader = new GLTFLoader();
         loader.register((parser) => new VRMLoaderPlugin(parser));
 
-        loader.load(url, (gltf) => {
-            const vrm = gltf.userData.vrm;
-            VRMUtils.rotateVRM0(vrm);
-            vrm.scene.rotation.y = Math.PI; 
-            this.scene.add(vrm.scene);
-            this.vrm = vrm;
-            this.motion.setVRM(vrm);
-            
-            // Set initial LookAt
-            this.lookAtTarget.position.y = 1.0; 
-            vrm.lookAt.target = this.lookAtTarget;
-            
-            console.log("AIBO Core: Body Online");
-            if (onLoaded) onLoaded();
-        });
+        loader.load(
+            url, 
+            (gltf) => {
+                const vrm = gltf.userData.vrm;
+                VRMUtils.rotateVRM0(vrm);
+                vrm.scene.rotation.y = Math.PI; 
+                this.scene.add(vrm.scene);
+                this.vrm = vrm;
+                this.motion.setVRM(vrm);
+                
+                // Set initial LookAt
+                this.lookAtTarget.position.y = 1.0; 
+                vrm.lookAt.target = this.lookAtTarget;
+                
+                console.log("AIBO Core: Body Online");
+                if (onLoaded) onLoaded();
+            },
+            (progress) => {
+                // Optional: Log percentage
+                console.log("Loading model...", 100.0 * (progress.loaded / progress.total), "%");
+            },
+            (error) => {
+                // --- ERROR HANDLING ---
+                console.error("AVATAR LOAD ERROR:", error);
+                alert("CRITICAL ERROR: Could not load avatar.vrm.\nCheck the Console (F12) for details.");
+            }
+        );
     }
 
     update(deltaTime) {

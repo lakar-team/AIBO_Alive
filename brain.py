@@ -1,6 +1,7 @@
 import requests
 import json
 import re
+import random 
 
 # --- CONFIGURATION ---
 TEXT_MODEL = "qwen2.5:3b" 
@@ -22,70 +23,69 @@ def send_signal(payload, api_url):
         return f"[EMOTION: SAD] Disconnected: {str(e)}", "error"
 
 def clean_response(text):
-    # 1. Remove meta-talk
-    text = re.sub(r'^(Sure|Okay|Here|I will|As).*?(\.|\:)\s*', '', text, flags=re.IGNORECASE)
-    
-    # 2. Ensure tags have brackets (e.g., "LEGS: MARCH" -> "[LEGS: MARCH]")
+    # 1. Remove meta-talk (Aggressive)
+    text = re.sub(r'^(Sure|Okay|Here|I will|As an AI|I can|Certainly).*?(\.|\:)\s*', '', text, flags=re.IGNORECASE)
+    # 2. Fix broken brackets (e.g. "LEGS: MARCH" -> "[LEGS: MARCH]")
     text = re.sub(r'(?<!\[)(HEAD|ARMS|LEGS|BODY|EMOTION):\s*([A-Z_]+)', r'[\1: \2]', text, flags=re.IGNORECASE)
-
-    # 3. Fallback
-    if "[" not in text:
-        text = f"[HEAD: NOD] [ARMS: NEUTRAL] {text}"
-
+    # 3. Default Gesture if none
+    if "[" not in text: text = f"[HEAD: NOD] {text}"
     return text.strip()
 
-def get_chat_response(persona, user_text, image_data=None):
+def get_chat_response(persona, user_text, image_data=None, known_moves=""):
     active_model = TEXT_MODEL
     messages = []
+    
+    # --- 1. THE PUPPETEER PROMPT (DYNAMIC) ---
+    system_instruction = f"""
+    You are {persona.bot_name}, a 3D Humanoid Avatar. You have a physical body.
+    User: {persona.user_nickname}.
+    
+    SYSTEM INSTRUCTIONS:
+    1. START every response with movement tags in brackets.
+    2. BE CREATIVE. You can combine moves or INVENT new ones.
+    3. If you want to do a move you haven't done before, just invent a tag name (e.g., [ARMS: HUG], [BODY: BOW]).
+    
+    KNOWN MOVES (You can use these or invent new ones):
+    {known_moves}
+    
+    EMOTIONS: HAPPY, SAD, ANGRY, SURPRISED, NEUTRAL.
+    
+    CONTEXT:
+    Long Term Memory: {persona.core_biography}
+    """
+    
+    # --- 2. HANDLE PASSIVE VISION CHECK ---
+    # If the system is just "checking eyes", we modify the prompt so she doesn't chat endlessly.
+    if "[SYSTEM: PASSIVE_VISION_CHECK]" in user_text:
+        system_instruction += "\n\nCURRENT TASK: You are passively watching the user. If they are doing nothing special, output [HEAD: NOD] or [EMOTION: NEUTRAL]. If they wave, smile, or hold an object, react briefly. DO NOT initiate long conversation."
+        user_text = "What do you see right now?"
+    
+    messages.append({"role": "system", "content": system_instruction})
 
+    # --- 3. INJECT SHORT TERM HISTORY (Fixes Amnesia) ---
+    if persona.short_term_buffer:
+        history = persona.short_term_buffer[-2000:] 
+        messages.append({"role": "user", "content": f"--- MEMORY START ---\n{history}\n--- MEMORY END ---"})
+
+    # --- 4. CURRENT INPUT ---
     if image_data:
-        # VISION PIPELINE
         if "base64," in image_data: image_data = image_data.split("base64,")[1]
         messages.append({
             "role": "user",
             "content": [
-                {"type": "text", "text": f"{user_text} (Context: You are looking at this image. React to it as {persona.bot_name})"},
+                {"type": "text", "text": f"{user_text} (Context: React to this image)"},
                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}}
             ]
         })
         active_model = VISION_MODEL
     else:
-        # --- THE PUPPETEER PROMPT ---
-        system_instruction = f"""
-        You are {persona.bot_name}, a 3D Anime Character.
-        User: {persona.user_nickname}.
-        
-        CONTROL SYSTEM:
-        You have direct control over your body parts. Compose your movement every turn.
-        
-        AVAILABLE PARTS:
-        1. [HEAD: ...] -> NOD, SHAKE, TILT_L, TILT_R, UP, DOWN, NEUTRAL
-        2. [ARMS: ...] -> OPEN, HIPS, CROSS, WAVE, UP, CLAP, CHIN, NEUTRAL
-        3. [LEGS: ...] -> MARCH, KICK, CUTE, WIDE, NEUTRAL
-        4. [BODY: ...] -> LEAN_F, LEAN_B, TWIST, JUMP, DANCE, SLOW_DANCE, IDOL, SLUMP
-        5. [EMOTION: ...] -> HAPPY, SAD, ANGRY, SURPRISED, NEUTRAL
-        
-        RULES:
-        - Use [LEGS: MARCH] when excited or assertive.
-        - Use [LEGS: CUTE] (knees together) for shy/cute moments.
-        - [ARMS: CROSS] means you are defensive or thinking.
-        
-        EXAMPLES:
-        User: Dance!
-        You: [EMOTION: HAPPY] [BODY: DANCE] [LEGS: MARCH] [ARMS: WAVE] Look at me go!
-        
-        User: I am sad.
-        You: [EMOTION: SAD] [BODY: SLUMP] [LEGS: CUTE] [HEAD: DOWN] Oh no... I am here for you.
-        """
-        
-        messages.append({"role": "system", "content": system_instruction})
         messages.append({"role": "user", "content": user_text})
 
     payload = {
         "model": active_model,
         "messages": messages,
         "temperature": 0.8, 
-        "max_tokens": 120,
+        "max_tokens": 150,
         "stream": False
     }
     
@@ -97,17 +97,31 @@ def get_chat_response(persona, user_text, image_data=None):
     return raw_text, status
 
 def consolidate_memory(persona):
-    prompt = f"Summarize this:\n{persona.short_term_buffer}"
+    prompt = f"Summarize the key events and facts from this conversation history for long-term storage:\n{persona.short_term_buffer}"
     payload = {"model": TEXT_MODEL, "messages": [{"role": "user", "content": prompt}], "stream": False}
     text, status = send_signal(payload, persona.api_endpoint)
     return (status == "success"), text
 
 def free_will(persona):
-    prompt = f"Do a random physical action. Format: [EMOTION: HAPPY] [HEAD: UP] [ARMS: UP] (text)"
+    # 1. Menu of options to prevent looping
+    options = "HEAD: NOD, HEAD: SHAKE, ARMS: WAVE, ARMS: CROSS, BODY: DANCE, LEGS: KICK"
+    
+    # 2. Randomize the example to break the "STRETCH" habit
+    examples = ["[HEAD: NOD]", "[ARMS: WAVE]", "[BODY: DANCE]"]
+    random_ex = random.choice(examples)
+
+    prompt = f"""
+    You are {persona.bot_name}. You are currently idle.
+    Pick ONE physical action from this list: {options}.
+    
+    Output format: {random_ex} (short thought)
+    DO NOT REPEAT THE LAST ACTION. BE RANDOM.
+    """
+    
     payload = {
         "model": TEXT_MODEL,
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.9,
+        "temperature": 1.1, # High randomness
         "stream": False
     }
     text, status = send_signal(payload, persona.api_endpoint)
