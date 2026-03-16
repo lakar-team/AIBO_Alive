@@ -1,2 +1,19 @@
-# Ignore AIBO Voice Cache
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+venv/
+ENV/
+
+# AIBO Voice Cache
 static/audio_cache/
+
+# SQLite & Instance data
+instance/*.db
+instance/*.log
+instance/custom_poses.json
+
+# IDEs
+.vscode/
+.idea/
