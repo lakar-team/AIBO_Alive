@@ -24,7 +24,7 @@ if not os.path.exists(os.path.join(BASE_DIR, 'instance')):
     os.makedirs(os.path.join(BASE_DIR, 'instance'))
 
 app = Flask(__name__)
-app.secret_key = "local_super_secret_key"
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "fallback_secret_key_change_me_in_production")
 
 # --- DATABASE CONFIG ---
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DB_FILE}'
@@ -74,7 +74,9 @@ def login():
         # Auto-create user if missing
         if not User.query.first():
             db.create_all()
-            admin = User(email="adam@local.host", name="Adam", password=generate_password_hash("password"))
+            admin_email = os.environ.get("AIBO_ADMIN_EMAIL", "admin@aibo.local")
+            admin_password = os.environ.get("AIBO_ADMIN_PASSWORD", "A1B0_S3cur3_P@ssw0rd")
+            admin = User(email=admin_email, name="Adam", password=generate_password_hash(admin_password))
             db.session.add(admin)
             db.session.commit()
             
